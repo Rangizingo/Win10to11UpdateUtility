@@ -9,6 +9,7 @@ $script:ISOUrl = "https://software-static.download.prss.microsoft.com/dbazure/88
 $script:RemotePath = "C:\Win11Upgrade"
 $script:ISOName = "Win11.iso"
 $script:MinSpaceGB = 30
+$script:AutoReboot = $true
 
 # ============================================================
 # CREATE MAIN FORM
@@ -106,18 +107,36 @@ $btnClear.Size = New-Object System.Drawing.Size(130, 35)
 $btnClear.Text = "Clear Log"
 $form.Controls.Add($btnClear)
 
+# Auto-reboot checkbox
+$chkAutoReboot = New-Object System.Windows.Forms.CheckBox
+$chkAutoReboot.Location = New-Object System.Drawing.Point(490, 100)
+$chkAutoReboot.Size = New-Object System.Drawing.Size(150, 25)
+$chkAutoReboot.Text = "Auto-reboot when ready"
+$chkAutoReboot.Checked = $script:AutoReboot
+$chkAutoReboot.Add_CheckedChanged({ $script:AutoReboot = $chkAutoReboot.Checked })
+$form.Controls.Add($chkAutoReboot)
+
+# Force Reboot button
+$btnReboot = New-Object System.Windows.Forms.Button
+$btnReboot.Location = New-Object System.Drawing.Point(10, 130)
+$btnReboot.Size = New-Object System.Drawing.Size(120, 30)
+$btnReboot.Text = "Force Reboot"
+$btnReboot.BackColor = [System.Drawing.Color]::OrangeRed
+$btnReboot.ForeColor = [System.Drawing.Color]::White
+$form.Controls.Add($btnReboot)
+
 # ============================================================
 # LOG OUTPUT
 # ============================================================
 $lblLog = New-Object System.Windows.Forms.Label
-$lblLog.Location = New-Object System.Drawing.Point(10, 140)
+$lblLog.Location = New-Object System.Drawing.Point(140, 135)
 $lblLog.Size = New-Object System.Drawing.Size(100, 20)
 $lblLog.Text = "Debug Log:"
 $form.Controls.Add($lblLog)
 
 $txtLog = New-Object System.Windows.Forms.TextBox
 $txtLog.Location = New-Object System.Drawing.Point(10, 165)
-$txtLog.Size = New-Object System.Drawing.Size(765, 440)
+$txtLog.Size = New-Object System.Drawing.Size(765, 435)
 $txtLog.Multiline = $true
 $txtLog.ScrollBars = "Vertical"
 $txtLog.Font = New-Object System.Drawing.Font("Consolas", 9)
@@ -234,7 +253,7 @@ $btnStorage.Add_Click({
 })
 
 # ============================================================
-# 3. APPLY REGISTRY BYPASS
+# 3. APPLY BYPASS (Registry + appraiserres.dll)
 # ============================================================
 $btnRegistry.Add_Click({
     if ($script:TargetPC -eq "") {
@@ -243,14 +262,19 @@ $btnRegistry.Add_Click({
     }
 
     Write-Log "========================================" "INFO"
-    Write-Log "Applying registry bypass on $($script:TargetPC)..." "INFO"
+    Write-Log "Applying ALL bypasses on $($script:TargetPC)..." "INFO"
+
+    # PART 1: Registry keys
+    Write-Log "[STEP 1/2] Applying registry bypasses..." "INFO"
 
     $regKeys = @(
         @{Path="HKLM:\SYSTEM\Setup\MoSetup"; Name="AllowUpgradesWithUnsupportedTPMOrCPU"; Value=1},
         @{Path="HKLM:\SYSTEM\Setup\LabConfig"; Name="BypassTPMCheck"; Value=1},
         @{Path="HKLM:\SYSTEM\Setup\LabConfig"; Name="BypassSecureBootCheck"; Value=1},
         @{Path="HKLM:\SYSTEM\Setup\LabConfig"; Name="BypassRAMCheck"; Value=1},
-        @{Path="HKLM:\SYSTEM\Setup\LabConfig"; Name="BypassCPUCheck"; Value=1}
+        @{Path="HKLM:\SYSTEM\Setup\LabConfig"; Name="BypassCPUCheck"; Value=1},
+        @{Path="HKLM:\SYSTEM\Setup\LabConfig"; Name="BypassStorageCheck"; Value=1},
+        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"; Name="DisableWUfBSafeguards"; Value=1}
     )
 
     foreach ($key in $regKeys) {
@@ -285,7 +309,41 @@ $btnRegistry.Add_Click({
         }
     }
 
-    Write-Log "Registry bypass complete." "INFO"
+    Write-Log "[OK] Registry bypasses complete." "INFO"
+
+    # PART 2: Disable appraiserres.dll (hardware check DLL)
+    Write-Log "[STEP 2/2] Disabling hardware check DLL (appraiserres.dll)..." "INFO"
+
+    $remoteDirUNC = "\\$($script:TargetPC)\C$\Win11Upgrade"
+    $appraiserPath = "$remoteDirUNC\Extracted\sources\appraiserres.dll"
+    $appraiserBackup = "$remoteDirUNC\Extracted\sources\appraiserres.dll.bak"
+
+    if (Test-Path $appraiserPath) {
+        try {
+            # Rename to disable it
+            if (Test-Path $appraiserBackup) {
+                Remove-Item $appraiserBackup -Force
+                Write-Log "[DEBUG] Removed old backup file" "DEBUG"
+            }
+            Rename-Item -Path $appraiserPath -NewName "appraiserres.dll.bak" -Force
+            Write-Log "[OK] appraiserres.dll disabled (renamed to .bak)" "INFO"
+            Write-Log "[INFO] This forces setup to skip ALL hardware compatibility checks" "INFO"
+        } catch {
+            Write-Log "[ERROR] Failed to rename appraiserres.dll: $($_.Exception.Message)" "ERROR"
+            Write-Log "[DEBUG] Trying via PsExec..." "DEBUG"
+
+            $cmd = "psexec \\$($script:TargetPC) -s cmd /c `"ren C:\Win11Upgrade\Extracted\sources\appraiserres.dll appraiserres.dll.bak`" 2>&1"
+            $output = cmd /c $cmd
+            Write-Log "[DEBUG] Output: $output" "DEBUG"
+        }
+    } else {
+        Write-Log "[INFO] appraiserres.dll not found - run Extract ISO first, then Apply Bypass again" "INFO"
+        Write-Log "[INFO] Registry bypasses have been applied. Run this step again after extraction." "INFO"
+    }
+
+    Write-Log "========================================" "INFO"
+    Write-Log "All bypasses applied!" "INFO"
+    Write-Log "[INFO] You can now run Start Upgrade" "INFO"
 })
 
 # ============================================================
@@ -539,18 +597,19 @@ $btnInstall.Add_Click({
     Write-Log "Starting Windows 11 upgrade on $($script:TargetPC)..." "INFO"
 
     $remoteDirUNC = "\\$($script:TargetPC)\C$\Win11Upgrade"
-    $setupPath = "$remoteDirUNC\Extracted\setup.exe"
+    $setupprepPath = "$remoteDirUNC\Extracted\sources\setupprep.exe"
 
-    if (!(Test-Path $setupPath)) {
-        Write-Log "[ERROR] setup.exe not found at $setupPath" "ERROR"
+    if (!(Test-Path $setupprepPath)) {
+        Write-Log "[ERROR] setupprep.exe not found at $setupprepPath" "ERROR"
         Write-Log "[SOLUTION] Run Extract ISO step first" "INFO"
         return
     }
 
-    Write-Log "[OK] setup.exe found" "INFO"
-    Write-Log "[DEBUG] Launching upgrade with bypass flags..." "DEBUG"
+    Write-Log "[OK] setupprep.exe found" "INFO"
+    Write-Log "[DEBUG] Launching upgrade using setupprep.exe /product server..." "DEBUG"
+    Write-Log "[INFO] This method bypasses ALL hardware checks" "INFO"
 
-    $cmd = "psexec \\$($script:TargetPC) -s -d `"C:\Win11Upgrade\Extracted\setup.exe`" /auto upgrade /eula accept /compat IgnoreWarning /quiet /noreboot 2>&1"
+    $cmd = "psexec \\$($script:TargetPC) -s -d `"C:\Win11Upgrade\Extracted\sources\setupprep.exe`" /product server /auto upgrade /quiet /eula accept /dynamicupdate disable 2>&1"
     Write-Log "[DEBUG] Command: $cmd" "DEBUG"
 
     $output = cmd /c $cmd
@@ -562,7 +621,9 @@ $btnInstall.Add_Click({
 
     Write-Log "[INFO] Upgrade process launched in background" "INFO"
     Write-Log "[INFO] Use 'Monitor Progress' to track the upgrade" "INFO"
-    Write-Log "[INFO] The PC will need to reboot to complete the upgrade" "INFO"
+
+    # Start auto-watch
+    Start-UpgradeWatch
 })
 
 # ============================================================
@@ -662,6 +723,167 @@ $btnClear.Add_Click({
     $txtLog.Clear()
     Write-Log "Log cleared." "INFO"
 })
+
+# ============================================================
+# FORCE REBOOT BUTTON
+# ============================================================
+$btnReboot.Add_Click({
+    if ($script:TargetPC -eq "") {
+        Write-Log "ERROR: Set target PC first!" "ERROR"
+        return
+    }
+
+    $confirm = [System.Windows.Forms.MessageBox]::Show(
+        "Force reboot $($script:TargetPC)?`n`nThis will immediately restart the PC!",
+        "Confirm Reboot",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
+
+    if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) {
+        Write-Log "[INFO] Reboot cancelled by user" "INFO"
+        return
+    }
+
+    Write-Log "========================================" "INFO"
+    Write-Log "Force rebooting $($script:TargetPC)..." "INFO"
+
+    # Send reboot command
+    $cmd = "psexec \\$($script:TargetPC) -s shutdown /r /f /t 5 /c `"Remote reboot initiated`" 2>&1"
+    Write-Log "[DEBUG] Command: $cmd" "DEBUG"
+    $output = cmd /c $cmd
+    foreach ($line in $output) {
+        if ($line -ne "") { Write-Log $line "DEBUG" }
+    }
+
+    Write-Log "[INFO] Reboot command sent. PC will restart in 5 seconds." "INFO"
+    Write-Log "[INFO] Monitoring for PC to come back online..." "INFO"
+
+    # Wait a moment for PC to start shutting down
+    Start-Sleep -Seconds 10
+
+    # Start ping monitoring
+    $maxAttempts = 60  # 5 minutes max
+    $attempt = 0
+    $wasOffline = $false
+
+    while ($attempt -lt $maxAttempts) {
+        $attempt++
+        [System.Windows.Forms.Application]::DoEvents()
+
+        $ping = Test-Connection -ComputerName $script:TargetPC -Count 1 -Quiet -ErrorAction SilentlyContinue
+
+        if ($ping) {
+            if ($wasOffline) {
+                Write-Log "[PING] $($script:TargetPC) is ONLINE! (attempt $attempt)" "INFO"
+                Write-Log "[SUCCESS] PC has rebooted and is back online!" "INFO"
+                [System.Media.SystemSounds]::Exclamation.Play()
+                [System.Windows.Forms.MessageBox]::Show("$($script:TargetPC) is back online!", "PC Online", "OK", "Information")
+                break
+            } else {
+                Write-Log "[PING] $($script:TargetPC) still online (shutting down...)" "DEBUG"
+            }
+        } else {
+            if (-not $wasOffline) {
+                Write-Log "[PING] $($script:TargetPC) went OFFLINE (rebooting...)" "INFO"
+                $wasOffline = $true
+            } else {
+                Write-Log "[PING] $($script:TargetPC) offline... waiting (attempt $attempt)" "DEBUG"
+            }
+        }
+
+        Start-Sleep -Seconds 5
+    }
+
+    if ($attempt -ge $maxAttempts) {
+        Write-Log "[WARN] Timeout waiting for PC to come back online" "WARN"
+    }
+})
+
+# ============================================================
+# AUTO-WATCH FUNCTION (checks if upgrade complete, triggers reboot)
+# ============================================================
+$script:WatchTimer = New-Object System.Windows.Forms.Timer
+$script:WatchTimer.Interval = 30000  # 30 seconds
+
+$script:WatchTimer.Add_Tick({
+    if ($script:TargetPC -eq "") { return }
+
+    # Check if setup processes are still running
+    $cmd = "psexec \\$($script:TargetPC) -s cmd /c `"tasklist | findstr /i setup`" 2>&1"
+    $output = cmd /c $cmd
+    $hasSetup = $output -match "setup"
+
+    # Check staging folder for completion markers
+    $stagingPath = "\\$($script:TargetPC)\C$\`$WINDOWS.~BT"
+    $setupLog = "$stagingPath\Sources\Panther\setupact.log"
+
+    $upgradeComplete = $false
+    $upgradeFailed = $false
+
+    if (Test-Path $setupLog) {
+        $logTail = Get-Content $setupLog -Tail 50 -ErrorAction SilentlyContinue
+        $logText = $logTail -join "`n"
+
+        # Check for completion indicators
+        if ($logText -match "MOUPG.*Finalize phase completed" -or
+            $logText -match "Overall progress: \[100%\]" -or
+            $logText -match "RebootMachine" -or
+            $logText -match "Reboot is required") {
+            $upgradeComplete = $true
+        }
+
+        # Check for failure
+        if ($logText -match "MOUPG.*failed" -or $logText -match "FatalError") {
+            $upgradeFailed = $true
+        }
+    }
+
+    # If no setup process and staging exists, might be done
+    if (-not $hasSetup -and (Test-Path $stagingPath)) {
+        # Double-check by looking for pending reboot state
+        $upgradeComplete = $true
+    }
+
+    if ($upgradeFailed) {
+        $script:WatchTimer.Stop()
+        Write-Log "[ERROR] Upgrade appears to have FAILED!" "ERROR"
+        Write-Log "[INFO] Check Monitor Progress for details" "INFO"
+        [System.Media.SystemSounds]::Hand.Play()
+        [System.Windows.Forms.MessageBox]::Show("Upgrade FAILED on $($script:TargetPC)!`nCheck logs for details.", "Upgrade Failed", "OK", "Error")
+    }
+    elseif ($upgradeComplete) {
+        $script:WatchTimer.Stop()
+        Write-Log "[SUCCESS] Upgrade pre-reboot phase COMPLETE!" "INFO"
+        [System.Media.SystemSounds]::Exclamation.Play()
+
+        if ($script:AutoReboot) {
+            Write-Log "[INFO] Auto-reboot enabled - rebooting $($script:TargetPC) now..." "INFO"
+            $rebootCmd = "psexec \\$($script:TargetPC) -s shutdown /r /t 30 /c `"Windows 11 upgrade complete - rebooting in 30 seconds`" 2>&1"
+            cmd /c $rebootCmd
+            Write-Log "[INFO] Reboot command sent. PC will restart in 30 seconds." "INFO"
+            [System.Windows.Forms.MessageBox]::Show("Upgrade complete on $($script:TargetPC)!`nPC is rebooting in 30 seconds to finish installation.", "Upgrade Complete", "OK", "Information")
+        } else {
+            Write-Log "[INFO] Auto-reboot disabled. Reboot manually to complete." "INFO"
+            [System.Windows.Forms.MessageBox]::Show("Upgrade complete on $($script:TargetPC)!`nReboot the PC manually to finish installation.", "Upgrade Complete - Reboot Required", "OK", "Information")
+        }
+    }
+    else {
+        # Still in progress - log a brief status
+        Write-Log "[WATCH] Upgrade still in progress... (checking every 30s)" "DEBUG"
+    }
+})
+
+# Start watching after upgrade begins
+function Start-UpgradeWatch {
+    Write-Log "[INFO] Auto-watch started - will notify when complete" "INFO"
+    if ($script:AutoReboot) {
+        Write-Log "[INFO] Auto-reboot is ENABLED - PC will reboot automatically" "INFO"
+    } else {
+        Write-Log "[INFO] Auto-reboot is DISABLED - manual reboot required" "INFO"
+    }
+    $script:WatchTimer.Start()
+}
 
 # ============================================================
 # STARTUP

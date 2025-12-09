@@ -6,8 +6,12 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
 
 - **Remote deployment** - Upgrade PCs across your network without physical access
 - **Hardware bypass** - Automatically applies all known registry bypasses for unsupported hardware
+- **Batch/Parallel mode** - Upgrade multiple PCs simultaneously with status tracking
+- **Auto-detection** - Detects current state of each PC on session restart
 - **Step-by-step workflow** - Each operation is a separate button for controlled execution
 - **Live progress monitoring** - Real-time download progress with speed and ETA
+- **Auto-reboot option** - Automatically reboot PCs when upgrade completes
+- **Force reboot with ping monitoring** - Remote reboot with live status until PC comes back online
 - **Debug logging** - Full terminal output for troubleshooting
 - **Domain-ready** - Uses PsExec and admin shares for enterprise environments
 
@@ -29,7 +33,8 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
 
 | File | Description |
 |------|-------------|
-| `Win11UpgradeGUI.ps1` | Main GUI application - use this for most operations |
+| `Win11UpgradeGUI.ps1` | Single-PC GUI - upgrade one PC at a time with detailed control |
+| `Win11UpgradeGUI-Batch.ps1` | **Multi-PC GUI** - parallel upgrades with status dashboard |
 | `Win11Bypass.bat` | Standalone batch script to apply registry bypass to multiple PCs |
 | `Win11Upgrade-Test.bat` | Test script for single PC upgrade (downloads and installs) |
 | `Win11Diagnose.bat` | Diagnostic tool to troubleshoot upgrade failures |
@@ -37,7 +42,25 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
 
 ## Quick Start
 
-### Using the GUI (Recommended)
+### Batch Mode (Multiple PCs - Recommended)
+
+1. Run PowerShell as Administrator
+2. Execute:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File "Win11UpgradeGUI-Batch.ps1"
+   ```
+3. Edit the PC list in the left panel (one PC per line)
+4. Click **Load PC List** - auto-detects current state of each PC
+5. Click **Test All Connections** - verifies which PCs are online
+6. Follow steps 3-6 in order:
+   - **Apply Bypass (All)** - Registry keys applied in parallel
+   - **Download ISO (All)** - Downloads start on all PCs simultaneously
+   - **Extract ISO (All)** - Extracts in parallel
+   - **Start Upgrade (All)** - Launches upgrades on all ready PCs
+7. Use **Monitor All** to check progress
+8. **Reboot All Ready** or let auto-reboot handle it
+
+### Single-PC Mode
 
 1. Run PowerShell as Administrator
 2. Execute:
@@ -51,17 +74,20 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
    - **Apply Bypass** - Set all registry keys
    - **Download ISO** - Download Windows 11 directly to target PC
    - **Extract ISO** - Mount and extract ISO contents
-   - **Start Upgrade** - Begin silent upgrade
+   - **Start Upgrade** - Begin silent upgrade (auto-watch starts)
    - **Monitor Progress** - Check upgrade status
    - **Verify OS** - Confirm Windows 11 is installed
 
-### Using Batch Scripts (Alternative)
+## Status Colors (Batch Mode)
 
-For bulk operations on multiple PCs:
-
-1. Edit `Win11Bypass.bat` to include your PC list
-2. Run as Administrator to apply registry bypass to all PCs
-3. Use `Win11Upgrade-Test.bat` to test on a single PC first
+| Color | Status |
+|-------|--------|
+| White | Pending / Online |
+| Gray | Offline |
+| Yellow | Downloading |
+| Blue | Upgrading |
+| Green | Complete (ready for reboot) |
+| Red | Failed |
 
 ## Registry Bypasses Applied
 
@@ -74,6 +100,28 @@ The tool applies all known Windows 11 requirement bypasses:
 | `HKLM\SYSTEM\Setup\LabConfig\BypassSecureBootCheck` | 1 | Skip Secure Boot check |
 | `HKLM\SYSTEM\Setup\LabConfig\BypassRAMCheck` | 1 | Skip 4GB RAM check |
 | `HKLM\SYSTEM\Setup\LabConfig\BypassCPUCheck` | 1 | Skip CPU compatibility check |
+| `HKLM\SYSTEM\Setup\LabConfig\BypassStorageCheck` | 1 | Skip storage check |
+| `HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\DisableWUfBSafeguards` | 1 | Disable safeguard holds |
+
+## Upgrade Command
+
+The tool uses `setupprep.exe` with the `/product server` flag to bypass hardware checks:
+
+```
+setupprep.exe /product server /auto upgrade /quiet /eula accept /dynamicupdate disable
+```
+
+- `/product server` - Treats upgrade as Server SKU (bypasses consumer hardware checks)
+- `/auto upgrade` - In-place upgrade keeping files/apps
+- `/quiet` - No UI (silent)
+- `/eula accept` - Auto-accept license
+- `/dynamicupdate disable` - Skip downloading updates during setup (prevents hangs)
+
+## Rollback
+
+Windows keeps a rollback option for **10 days** after upgrade:
+- Settings → System → Recovery → "Go back to Windows 10"
+- Requires `C:\Windows.old` folder (don't run Disk Cleanup!)
 
 ## Troubleshooting
 
@@ -87,27 +135,34 @@ The tool applies all known Windows 11 requirement bypasses:
 
 ### Upgrade fails with 0xC1900200
 - Hardware requirements not bypassed - run "Apply Bypass" step
-- Use the `/compat IgnoreWarning` flag (already included in scripts)
+- The `/product server` flag should handle this
 
-### Download fails
-- Microsoft ISO links may expire - script uses static URLs
+### Download fails / stuck at "waiting"
+- Microsoft ISO links may expire - check URL is still valid
 - Check target PC has internet access
 - Manually download ISO and copy to `\\PCNAME\C$\Win11Upgrade\Win11.iso`
+
+### Upgrade stuck at 0%
+- Add `/dynamicupdate disable` flag (already included)
+- Check if `SetupHost.exe` is running on target PC
 
 ### Use the Diagnostic Tool
 Run `Win11Diagnose.bat` to generate a comprehensive report of potential issues.
 
+## Session Persistence
+
+- **Downloads** run on target PCs - closing GUI doesn't interrupt them
+- **Upgrades** run on target PCs - closing GUI doesn't interrupt them
+- **Auto-detect** on "Load PC List" finds current state of each PC
+- Safe to close and reopen the tool at any time
+
 ## How It Works
 
 1. **Registry Bypass**: Adds registry keys that tell Windows Setup to skip hardware checks
-2. **ISO Download**: Downloads Windows 11 ISO directly to the target PC from Microsoft's static servers
-3. **Extraction**: Mounts the ISO and copies files to a local folder (required for remote execution)
-4. **Silent Upgrade**: Runs `setup.exe` with flags:
-   - `/auto upgrade` - In-place upgrade keeping files/apps
-   - `/eula accept` - Auto-accept license
-   - `/compat IgnoreWarning` - Ignore compatibility warnings
-   - `/quiet` - No UI
-   - `/noreboot` - Don't auto-reboot (user controls timing)
+2. **ISO Download**: Downloads Windows 11 ISO directly to target PC (background process)
+3. **Extraction**: Mounts the ISO and copies files to a local folder
+4. **Silent Upgrade**: Runs `setupprep.exe /product server` to bypass all hardware checks
+5. **Auto-Watch**: Monitors setup logs for completion, triggers reboot when ready
 
 ## Security Notes
 
@@ -123,8 +178,7 @@ MIT License - Use at your own risk. Not affiliated with Microsoft.
 ## Disclaimer
 
 Bypassing Windows 11 hardware requirements means Microsoft may not support your installation. While upgrades typically work fine, you may encounter:
-- No security updates (Microsoft has stated they may withhold updates)
-- Potential stability issues on very old hardware
+- Potential issues with future updates on very old hardware
 - No official support from Microsoft
 
 Test on a single PC before mass deployment.
