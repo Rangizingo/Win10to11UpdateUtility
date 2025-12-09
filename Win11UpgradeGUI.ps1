@@ -291,7 +291,7 @@ $btnRegistry.Add_Click({
 # ============================================================
 # 4. DOWNLOAD ISO
 # ============================================================
-$script:ExpectedISOSizeGB = 6.2
+$script:ExpectedISOSizeGB = 6.6
 $script:DownloadCancelled = $false
 
 $btnDownload.Add_Click({
@@ -393,10 +393,12 @@ try {
                 $etaString = "ETA: calculating..."
             }
 
-            # Create progress bar
+            # Create progress bar (cap at 100% to avoid negative values)
             $barLength = 30
-            $filledLength = [math]::Floor($percentComplete / 100 * $barLength)
-            $bar = "=" * $filledLength + "-" * ($barLength - $filledLength)
+            $displayPercent = [math]::Min($percentComplete, 100)
+            $filledLength = [math]::Max(0, [math]::Min($barLength, [math]::Floor($displayPercent / 100 * $barLength)))
+            $emptyLength = [math]::Max(0, $barLength - $filledLength)
+            $bar = ("=" * $filledLength) + ("-" * $emptyLength)
 
             Write-Log "[PROGRESS] [$bar] $percentComplete% ($currentSizeGB GB / $($script:ExpectedISOSizeGB) GB) @ $speedMBps MB/s - $etaString" "INFO"
 
