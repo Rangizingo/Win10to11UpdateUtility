@@ -1,0 +1,11 @@
+# Log files
+*.log
+Win11Upgrade.log
+Win11Diagnose.log
+
+# ISO files (too large for git)
+*.iso
+
+# Temporary files
+*.tmp
+*~
