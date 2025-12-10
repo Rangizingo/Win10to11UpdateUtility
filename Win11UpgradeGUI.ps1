@@ -25,6 +25,7 @@ $script:STATUS_EXTRACTED = "Extracted"
 $script:STATUS_UPGRADING = "Upgrading..."
 $script:STATUS_COMPLETE = "Complete!"
 $script:STATUS_REBOOTING = "Rebooting..."
+$script:STATUS_ROLLING_BACK = "Rolling Back..."
 $script:STATUS_FAILED = "FAILED"
 
 # ============================================================
@@ -162,10 +163,18 @@ $form.Controls.Add($btnCheckStorage)
 # Force Reboot Selected button
 $btnForceReboot = New-Object System.Windows.Forms.Button
 $btnForceReboot.Location = New-Object System.Drawing.Point(580, 210)
-$btnForceReboot.Size = New-Object System.Drawing.Size(170, 30)
-$btnForceReboot.Text = "Force Reboot Selected"
+$btnForceReboot.Size = New-Object System.Drawing.Size(82, 30)
+$btnForceReboot.Text = "Force Reboot"
 $btnForceReboot.BackColor = [System.Drawing.Color]::Orange
 $form.Controls.Add($btnForceReboot)
+
+$btnForceRollback = New-Object System.Windows.Forms.Button
+$btnForceRollback.Location = New-Object System.Drawing.Point(668, 210)
+$btnForceRollback.Size = New-Object System.Drawing.Size(82, 30)
+$btnForceRollback.Text = "Rollback"
+$btnForceRollback.BackColor = [System.Drawing.Color]::MediumPurple
+$btnForceRollback.ForeColor = [System.Drawing.Color]::White
+$form.Controls.Add($btnForceRollback)
 
 $btnClearLog = New-Object System.Windows.Forms.Button
 $btnClearLog.Location = New-Object System.Drawing.Point(760, 175)
@@ -375,9 +384,15 @@ $btnAddAll.Add_Click({
 # CLEAR TARGETS BUTTON: Remove all from target list
 # ============================================================
 $btnClearTargets.Add_Click({
-    $listStatus.Items.Clear()
-    $script:PCStatus.Clear()
-    Write-Log "[INFO] Cleared all PCs from target list" "INFO"
+    try {
+        $listStatus.BeginUpdate()
+        $listStatus.Items.Clear()
+        $script:PCStatus.Clear()
+        $listStatus.EndUpdate()
+        Write-Log "[INFO] Cleared all PCs from target list" "INFO"
+    } catch {
+        Write-Log "[ERROR] Failed to clear list: $_" "ERROR"
+    }
 })
 
 # ============================================================
@@ -412,12 +427,21 @@ $listAvailable.Add_DoubleClick({
 # DOUBLE-CLICK: Remove PC from Target list
 # ============================================================
 $listStatus.Add_DoubleClick({
-    if ($listStatus.SelectedItems.Count -eq 0) { return }
+    try {
+        if ($listStatus.SelectedItems.Count -eq 0) { return }
 
-    $pcName = $listStatus.SelectedItems[0].Text
-    $listStatus.SelectedItems[0].Remove()
-    $script:PCStatus.Remove($pcName)
-    Write-Log "[REMOVED] $pcName from target list" "INFO"
+        $pcName = $listStatus.SelectedItems[0].Text
+        $itemToRemove = $listStatus.SelectedItems[0]
+
+        $listStatus.BeginUpdate()
+        $listStatus.Items.Remove($itemToRemove)
+        $script:PCStatus.Remove($pcName)
+        $listStatus.EndUpdate()
+
+        Write-Log "[REMOVED] $pcName from target list" "INFO"
+    } catch {
+        Write-Log "[ERROR] Failed to remove PC: $_" "ERROR"
+    }
 })
 
 # ============================================================
@@ -968,6 +992,124 @@ $btnForceReboot.Add_Click({
 
     if ($attempt -ge $maxAttempts) {
         Write-Log "[WARN] Timeout waiting for $pc to come back online" "WARN"
+    }
+})
+
+# ============================================================
+# FORCE ROLLBACK SELECTED (rollback to Windows 10)
+# ============================================================
+$btnForceRollback.Add_Click({
+    # Get selected PC from ListView
+    if ($listStatus.SelectedItems.Count -eq 0) {
+        Write-Log "[ERROR] No PC selected. Click a PC in the status list first." "ERROR"
+        return
+    }
+
+    $pc = $listStatus.SelectedItems[0].Text
+
+    # Check if rollback is available
+    Write-Log "Checking rollback availability on $pc..." "INFO"
+    [System.Windows.Forms.Application]::DoEvents()
+
+    $rollbackCheck = & psexec "\\$pc" -s dism /Online /Get-OSUninstallWindow 2>&1
+    $rollbackOutput = $rollbackCheck -join "`n"
+
+    if ($rollbackOutput -match "Uninstall Window\s*:\s*(\d+)") {
+        $daysLeft = $matches[1]
+        Write-Log "[INFO] $pc - Rollback available: $daysLeft days remaining" "INFO"
+    } elseif ($rollbackOutput -match "no previous version" -or $rollbackOutput -match "Error") {
+        Write-Log "[ERROR] $pc - Rollback not available. Windows.old may be missing or window expired." "ERROR"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Rollback is not available on $pc.`n`nPossible reasons:`n- Windows.old folder was deleted`n- 60-day rollback window has expired`n- PC was never upgraded from Windows 10",
+            "Rollback Not Available",
+            "OK",
+            "Error"
+        )
+        return
+    }
+
+    $confirm = [System.Windows.Forms.MessageBox]::Show(
+        "Roll back $pc to Windows 10?`n`nThis will:`n- Restore previous Windows 10 installation`n- PC will reboot automatically`n- User data should be preserved`n`nDays remaining: $daysLeft",
+        "Confirm Rollback to Windows 10",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
+
+    if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) {
+        Write-Log "[INFO] Rollback cancelled by user" "INFO"
+        return
+    }
+
+    Write-Log "========================================" "INFO"
+    Write-Log "Initiating rollback to Windows 10 on $pc..." "INFO"
+
+    Update-PCStatus $pc $script:STATUS_ROLLING_BACK
+
+    # Initiate the rollback
+    $rollbackResult = & psexec "\\$pc" -s dism /Online /Initiate-OSUninstall /Quiet 2>&1
+    $resultText = $rollbackResult -join "`n"
+
+    if ($resultText -match "Error" -or $resultText -match "failed") {
+        Write-Log "[ERROR] $pc - Rollback failed: $resultText" "ERROR"
+        Update-PCStatus $pc $script:STATUS_FAILED
+        return
+    }
+
+    Write-Log "[INFO] $pc - Rollback initiated. PC will reboot automatically." "INFO"
+    Write-Log "[INFO] The rollback process takes 15-30 minutes." "INFO"
+
+    # Start ping monitoring
+    Start-Sleep -Seconds 10
+
+    $maxAttempts = 90  # 7.5 minutes of monitoring
+    $attempt = 0
+    $wasOffline = $false
+
+    while ($attempt -lt $maxAttempts) {
+        $attempt++
+        [System.Windows.Forms.Application]::DoEvents()
+
+        $ping = Test-Connection -ComputerName $pc -Count 1 -Quiet -ErrorAction SilentlyContinue
+
+        if ($ping) {
+            if ($wasOffline) {
+                Write-Log "[PING] $pc is ONLINE!" "INFO"
+                Update-PCStatus $pc $script:STATUS_ONLINE
+                [System.Media.SystemSounds]::Exclamation.Play()
+
+                # Check OS version
+                Start-Sleep -Seconds 30  # Wait for services to start
+                try {
+                    $os = Get-WmiObject Win32_OperatingSystem -ComputerName $pc -ErrorAction Stop
+                    if ($os.Caption -like "*Windows 10*") {
+                        Write-Log "[SUCCESS] $pc - Rolled back to Windows 10!" "INFO"
+                        Update-PCStatus $pc "Windows 10 (Rolled Back)"
+                        [System.Windows.Forms.MessageBox]::Show("$pc successfully rolled back to Windows 10!", "Rollback Complete", "OK", "Information")
+                    } else {
+                        Write-Log "[INFO] $pc - OS: $($os.Caption)" "INFO"
+                    }
+                } catch {
+                    Write-Log "[INFO] $pc - Back online. Verify OS version manually." "INFO"
+                }
+                break
+            } else {
+                Write-Log "[PING] $pc still online (preparing rollback...)" "DEBUG"
+            }
+        } else {
+            if (-not $wasOffline) {
+                Write-Log "[PING] $pc went OFFLINE (rolling back...)" "INFO"
+                $wasOffline = $true
+            } else {
+                Write-Log "[PING] $pc offline... waiting ($attempt)" "DEBUG"
+            }
+        }
+
+        Start-Sleep -Seconds 5
+    }
+
+    if ($attempt -ge $maxAttempts) {
+        Write-Log "[INFO] Monitoring timeout. Rollback may still be in progress." "INFO"
+        Write-Log "[INFO] Check $pc manually in 15-30 minutes." "INFO"
     }
 })
 

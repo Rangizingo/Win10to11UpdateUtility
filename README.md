@@ -79,7 +79,8 @@ All actions run on **selected PCs** if any are selected, otherwise runs on **all
 | 7. Verify OS | Confirm Windows 11 is installed |
 | Reboot Ready | Reboot all PCs that completed upgrade |
 | Check Storage | Show free disk space on target PCs |
-| Force Reboot Selected | Reboot selected PC with ping monitoring |
+| Force Reboot | Reboot selected PC with ping monitoring |
+| Rollback | Roll back selected PC to Windows 10 (remote) |
 
 ## Workflow
 
@@ -144,17 +145,32 @@ setupprep.exe /product server /auto upgrade /quiet /eula accept /dynamicupdate d
 
 After upgrading, users have **60 days** to rollback (extended from default 10 days):
 
-**Via Settings:**
+### Via GUI (Recommended)
+1. Select the PC in the Target PCs list
+2. Click the **Rollback** button
+3. The tool will:
+   - Check if rollback is available
+   - Show days remaining in rollback window
+   - Initiate the rollback remotely
+   - Monitor the PC until it comes back online
+   - Verify Windows 10 is restored
+
+### Via Settings (Manual)
 - Settings → System → Recovery → "Go back to Windows 10"
 
-**Via Command (remote):**
+### Via Command (Remote)
 ```powershell
-DISM /Online /Initiate-OSUninstall
+# Check rollback availability
+psexec \\PCNAME -s dism /Online /Get-OSUninstallWindow
+
+# Initiate rollback
+psexec \\PCNAME -s dism /Online /Initiate-OSUninstall /Quiet
 ```
 
-**Requirements:**
+### Requirements
 - `C:\Windows.old` folder must exist (don't run Disk Cleanup!)
 - Must be within the 60-day rollback window
+- PC must be on Windows 11 (upgraded from Windows 10)
 
 ## Session Persistence
 
