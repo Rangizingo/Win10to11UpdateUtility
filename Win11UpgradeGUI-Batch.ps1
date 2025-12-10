@@ -145,9 +145,16 @@ $btnClearLog.Size = New-Object System.Drawing.Size(170, 30)
 $btnClearLog.Text = "Clear Log"
 $form.Controls.Add($btnClearLog)
 
+# Verify OS button
+$btnVerifyAll = New-Object System.Windows.Forms.Button
+$btnVerifyAll.Location = New-Object System.Drawing.Point(760, 175)
+$btnVerifyAll.Size = New-Object System.Drawing.Size(170, 30)
+$btnVerifyAll.Text = "8. Verify OS Version"
+$form.Controls.Add($btnVerifyAll)
+
 # Auto-reboot checkbox
 $chkAutoReboot = New-Object System.Windows.Forms.CheckBox
-$chkAutoReboot.Location = New-Object System.Drawing.Point(760, 180)
+$chkAutoReboot.Location = New-Object System.Drawing.Point(760, 210)
 $chkAutoReboot.Size = New-Object System.Drawing.Size(170, 25)
 $chkAutoReboot.Text = "Auto-reboot when ready"
 $chkAutoReboot.Checked = $script:AutoReboot
@@ -732,6 +739,45 @@ $btnRebootAll.Add_Click({
 $btnClearLog.Add_Click({
     $txtLog.Clear()
     Write-Log "Log cleared." "INFO"
+})
+
+# ============================================================
+# 8. VERIFY OS VERSION (All PCs)
+# ============================================================
+$btnVerifyAll.Add_Click({
+    $pcs = Get-PCList
+
+    Write-Log "========================================" "INFO"
+    Write-Log "Checking OS version on all PCs..." "INFO"
+
+    $win11Count = 0
+    $win10Count = 0
+    $offlineCount = 0
+
+    foreach ($pc in $pcs) {
+        [System.Windows.Forms.Application]::DoEvents()
+
+        try {
+            $os = Get-WmiObject Win32_OperatingSystem -ComputerName $pc -ErrorAction Stop
+
+            if ($os.Caption -like "*Windows 11*") {
+                Write-Log "[WIN11] $pc - $($os.Caption) (Build $($os.BuildNumber))" "INFO"
+                Update-PCStatus $pc "Windows 11"
+                $win11Count++
+            } else {
+                Write-Log "[WIN10] $pc - $($os.Caption) (Build $($os.BuildNumber))" "INFO"
+                Update-PCStatus $pc "Windows 10"
+                $win10Count++
+            }
+        } catch {
+            Write-Log "[OFFLINE] $pc - Cannot query OS" "WARN"
+            Update-PCStatus $pc $script:STATUS_OFFLINE
+            $offlineCount++
+        }
+    }
+
+    Write-Log "========================================" "INFO"
+    Write-Log "Summary: Windows 11: $win11Count | Windows 10: $win10Count | Offline: $offlineCount" "INFO"
 })
 
 # ============================================================
