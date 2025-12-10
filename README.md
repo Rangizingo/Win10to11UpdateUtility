@@ -33,8 +33,7 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
 
 | File | Description |
 |------|-------------|
-| `Win11UpgradeGUI.ps1` | Single-PC GUI - upgrade one PC at a time with detailed control |
-| `Win11UpgradeGUI-Batch.ps1` | **Multi-PC GUI** - parallel upgrades with status dashboard |
+| `Win11UpgradeGUI.ps1` | **Main GUI** - supports single or multiple PCs with parallel upgrades |
 | `Win11Bypass.bat` | Standalone batch script to apply registry bypass to multiple PCs |
 | `Win11Upgrade-Test.bat` | Test script for single PC upgrade (downloads and installs) |
 | `Win11Diagnose.bat` | Diagnostic tool to troubleshoot upgrade failures |
@@ -42,12 +41,10 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
 
 ## Quick Start
 
-### Batch Mode (Multiple PCs - Recommended)
-
 1. Run PowerShell as Administrator
 2. Execute:
    ```powershell
-   powershell -ExecutionPolicy Bypass -File "Win11UpgradeGUI-Batch.ps1"
+   powershell -ExecutionPolicy Bypass -File "Win11UpgradeGUI.ps1"
    ```
 3. Edit the PC list in the left panel (one PC per line)
 4. Click **Load PC List** - auto-detects current state of each PC
@@ -59,26 +56,17 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
    - **Start Upgrade (All)** - Launches upgrades on all ready PCs
 7. Use **Monitor All** to check progress
 8. **Reboot All Ready** or let auto-reboot handle it
+9. **Verify OS** to confirm Windows 11 is installed
 
-### Single-PC Mode
+**Tip:** For a single PC, just enter one PC name in the list.
 
-1. Run PowerShell as Administrator
-2. Execute:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File "Win11UpgradeGUI.ps1"
-   ```
-3. Enter target PC hostname and click "Set Target"
-4. Follow steps 1-8 in order:
-   - **Test Connection** - Verify PC is reachable
-   - **Check Storage** - Ensure 30GB+ free space
-   - **Apply Bypass** - Set all registry keys
-   - **Download ISO** - Download Windows 11 directly to target PC
-   - **Extract ISO** - Mount and extract ISO contents
-   - **Start Upgrade** - Begin silent upgrade (auto-watch starts)
-   - **Monitor Progress** - Check upgrade status
-   - **Verify OS** - Confirm Windows 11 is installed
+## Additional Features
 
-## Status Colors (Batch Mode)
+- **Check Storage (All)** - Shows free disk space on all PCs
+- **Force Reboot Selected** - Click a PC in the list, then force reboot with ping monitoring
+- **60-day rollback window** - Automatically extended during bypass (default is 10 days)
+
+## Status Colors
 
 | Color | Status |
 |-------|--------|
