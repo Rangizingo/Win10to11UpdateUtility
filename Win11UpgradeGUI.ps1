@@ -38,40 +38,51 @@ $form.FormBorderStyle = "FixedSingle"
 $form.MaximizeBox = $false
 
 # ============================================================
-# PC LIST INPUT (Left Panel)
+# AVAILABLE PCs LIST (Left Panel) - Double-click to add
 # ============================================================
-$lblPCList = New-Object System.Windows.Forms.Label
-$lblPCList.Location = New-Object System.Drawing.Point(10, 10)
-$lblPCList.Size = New-Object System.Drawing.Size(200, 20)
-$lblPCList.Text = "Target PCs (one per line):"
-$form.Controls.Add($lblPCList)
+$lblAvailable = New-Object System.Windows.Forms.Label
+$lblAvailable.Location = New-Object System.Drawing.Point(10, 10)
+$lblAvailable.Size = New-Object System.Drawing.Size(200, 20)
+$lblAvailable.Text = "Available PCs (double-click to add):"
+$form.Controls.Add($lblAvailable)
 
-$txtPCList = New-Object System.Windows.Forms.TextBox
-$txtPCList.Location = New-Object System.Drawing.Point(10, 35)
-$txtPCList.Size = New-Object System.Drawing.Size(200, 200)
-$txtPCList.Multiline = $true
-$txtPCList.ScrollBars = "Vertical"
-$txtPCList.Font = New-Object System.Drawing.Font("Consolas", 9)
-$txtPCList.Text = @"
-01INVENTORY-PC
-03STAGE-PC
-ALESOVICH-LAP
-BCHASTEEN-LAP
-CALLDATA-PC
-PSMITH-LAP
-SECURITY99
-SHIP2-PC2
-SVANHOLLEN-PC
-"@
-$form.Controls.Add($txtPCList)
+$listAvailable = New-Object System.Windows.Forms.ListView
+$listAvailable.Location = New-Object System.Drawing.Point(10, 35)
+$listAvailable.Size = New-Object System.Drawing.Size(200, 200)
+$listAvailable.View = [System.Windows.Forms.View]::Details
+$listAvailable.FullRowSelect = $true
+$listAvailable.GridLines = $true
+$listAvailable.Font = New-Object System.Drawing.Font("Consolas", 9)
+$listAvailable.Columns.Add("PC Name", 180) | Out-Null
+$form.Controls.Add($listAvailable)
+
+# Pre-populate available PCs
+$defaultPCs = @("01INVENTORY-PC", "03STAGE-PC", "ALESOVICH-LAP", "BCHASTEEN-LAP", "CALLDATA-PC", "PSMITH-LAP", "SECURITY99", "SHIP2-PC2", "SVANHOLLEN-PC")
+foreach ($pc in $defaultPCs) {
+    $item = New-Object System.Windows.Forms.ListViewItem($pc)
+    $listAvailable.Items.Add($item) | Out-Null
+}
+
+# Add All / Clear buttons for quick management
+$btnAddAll = New-Object System.Windows.Forms.Button
+$btnAddAll.Location = New-Object System.Drawing.Point(10, 240)
+$btnAddAll.Size = New-Object System.Drawing.Size(95, 25)
+$btnAddAll.Text = "Add All >>"
+$form.Controls.Add($btnAddAll)
+
+$btnClearTargets = New-Object System.Windows.Forms.Button
+$btnClearTargets.Location = New-Object System.Drawing.Point(115, 240)
+$btnClearTargets.Size = New-Object System.Drawing.Size(95, 25)
+$btnClearTargets.Text = "Clear Targets"
+$form.Controls.Add($btnClearTargets)
 
 # ============================================================
-# STATUS LIST (Middle Panel)
+# TARGET PCs STATUS LIST (Middle Panel) - Double-click to remove
 # ============================================================
 $lblStatus = New-Object System.Windows.Forms.Label
 $lblStatus.Location = New-Object System.Drawing.Point(220, 10)
-$lblStatus.Size = New-Object System.Drawing.Size(200, 20)
-$lblStatus.Text = "PC Status:"
+$lblStatus.Size = New-Object System.Drawing.Size(350, 20)
+$lblStatus.Text = "Target PCs (double-click to remove, select for actions):"
 $form.Controls.Add($lblStatus)
 
 $listStatus = New-Object System.Windows.Forms.ListView
@@ -80,6 +91,7 @@ $listStatus.Size = New-Object System.Drawing.Size(350, 200)
 $listStatus.View = [System.Windows.Forms.View]::Details
 $listStatus.FullRowSelect = $true
 $listStatus.GridLines = $true
+$listStatus.MultiSelect = $true
 $listStatus.Font = New-Object System.Drawing.Font("Consolas", 9)
 $listStatus.Columns.Add("PC Name", 150) | Out-Null
 $listStatus.Columns.Add("Status", 180) | Out-Null
@@ -88,84 +100,78 @@ $form.Controls.Add($listStatus)
 # ============================================================
 # ACTION BUTTONS (Right Panel)
 # ============================================================
-$btnLoadPCs = New-Object System.Windows.Forms.Button
-$btnLoadPCs.Location = New-Object System.Drawing.Point(580, 35)
-$btnLoadPCs.Size = New-Object System.Drawing.Size(170, 30)
-$btnLoadPCs.Text = "1. Load PC List"
-$form.Controls.Add($btnLoadPCs)
-
 $btnTestAll = New-Object System.Windows.Forms.Button
-$btnTestAll.Location = New-Object System.Drawing.Point(580, 70)
+$btnTestAll.Location = New-Object System.Drawing.Point(580, 35)
 $btnTestAll.Size = New-Object System.Drawing.Size(170, 30)
-$btnTestAll.Text = "2. Test All Connections"
+$btnTestAll.Text = "1. Test Connections"
 $form.Controls.Add($btnTestAll)
 
 $btnBypassAll = New-Object System.Windows.Forms.Button
-$btnBypassAll.Location = New-Object System.Drawing.Point(580, 105)
+$btnBypassAll.Location = New-Object System.Drawing.Point(580, 70)
 $btnBypassAll.Size = New-Object System.Drawing.Size(170, 30)
-$btnBypassAll.Text = "3. Apply Bypass (All)"
+$btnBypassAll.Text = "2. Apply Bypass"
 $form.Controls.Add($btnBypassAll)
 
 $btnDownloadAll = New-Object System.Windows.Forms.Button
-$btnDownloadAll.Location = New-Object System.Drawing.Point(580, 140)
+$btnDownloadAll.Location = New-Object System.Drawing.Point(580, 105)
 $btnDownloadAll.Size = New-Object System.Drawing.Size(170, 30)
-$btnDownloadAll.Text = "4. Download ISO (All)"
+$btnDownloadAll.Text = "3. Download ISO"
 $form.Controls.Add($btnDownloadAll)
 
 $btnExtractAll = New-Object System.Windows.Forms.Button
-$btnExtractAll.Location = New-Object System.Drawing.Point(580, 175)
+$btnExtractAll.Location = New-Object System.Drawing.Point(580, 140)
 $btnExtractAll.Size = New-Object System.Drawing.Size(170, 30)
-$btnExtractAll.Text = "5. Extract ISO (All)"
+$btnExtractAll.Text = "4. Extract ISO"
 $form.Controls.Add($btnExtractAll)
 
 $btnUpgradeAll = New-Object System.Windows.Forms.Button
-$btnUpgradeAll.Location = New-Object System.Drawing.Point(760, 35)
+$btnUpgradeAll.Location = New-Object System.Drawing.Point(580, 175)
 $btnUpgradeAll.Size = New-Object System.Drawing.Size(170, 30)
-$btnUpgradeAll.Text = "6. Start Upgrade (All)"
+$btnUpgradeAll.Text = "5. Start Upgrade"
 $btnUpgradeAll.BackColor = [System.Drawing.Color]::LightGreen
 $form.Controls.Add($btnUpgradeAll)
 
 $btnMonitorAll = New-Object System.Windows.Forms.Button
-$btnMonitorAll.Location = New-Object System.Drawing.Point(760, 70)
+$btnMonitorAll.Location = New-Object System.Drawing.Point(760, 35)
 $btnMonitorAll.Size = New-Object System.Drawing.Size(170, 30)
-$btnMonitorAll.Text = "7. Monitor All"
+$btnMonitorAll.Text = "6. Monitor Progress"
 $form.Controls.Add($btnMonitorAll)
 
 $btnRebootAll = New-Object System.Windows.Forms.Button
-$btnRebootAll.Location = New-Object System.Drawing.Point(760, 105)
+$btnRebootAll.Location = New-Object System.Drawing.Point(760, 70)
 $btnRebootAll.Size = New-Object System.Drawing.Size(170, 30)
-$btnRebootAll.Text = "Reboot All Ready"
+$btnRebootAll.Text = "Reboot Ready"
 $btnRebootAll.BackColor = [System.Drawing.Color]::OrangeRed
 $btnRebootAll.ForeColor = [System.Drawing.Color]::White
 $form.Controls.Add($btnRebootAll)
 
-$btnClearLog = New-Object System.Windows.Forms.Button
-$btnClearLog.Location = New-Object System.Drawing.Point(760, 140)
-$btnClearLog.Size = New-Object System.Drawing.Size(80, 30)
-$btnClearLog.Text = "Clear Log"
-$form.Controls.Add($btnClearLog)
-
 # Verify OS button
 $btnVerifyAll = New-Object System.Windows.Forms.Button
-$btnVerifyAll.Location = New-Object System.Drawing.Point(845, 140)
-$btnVerifyAll.Size = New-Object System.Drawing.Size(85, 30)
-$btnVerifyAll.Text = "Verify OS"
+$btnVerifyAll.Location = New-Object System.Drawing.Point(760, 105)
+$btnVerifyAll.Size = New-Object System.Drawing.Size(170, 30)
+$btnVerifyAll.Text = "7. Verify OS"
 $form.Controls.Add($btnVerifyAll)
 
 # Check Storage button
 $btnCheckStorage = New-Object System.Windows.Forms.Button
-$btnCheckStorage.Location = New-Object System.Drawing.Point(580, 210)
+$btnCheckStorage.Location = New-Object System.Drawing.Point(760, 140)
 $btnCheckStorage.Size = New-Object System.Drawing.Size(170, 30)
-$btnCheckStorage.Text = "Check Storage (All)"
+$btnCheckStorage.Text = "Check Storage"
 $form.Controls.Add($btnCheckStorage)
 
 # Force Reboot Selected button
 $btnForceReboot = New-Object System.Windows.Forms.Button
-$btnForceReboot.Location = New-Object System.Drawing.Point(760, 175)
+$btnForceReboot.Location = New-Object System.Drawing.Point(580, 210)
 $btnForceReboot.Size = New-Object System.Drawing.Size(170, 30)
 $btnForceReboot.Text = "Force Reboot Selected"
 $btnForceReboot.BackColor = [System.Drawing.Color]::Orange
 $form.Controls.Add($btnForceReboot)
+
+$btnClearLog = New-Object System.Windows.Forms.Button
+$btnClearLog.Location = New-Object System.Drawing.Point(760, 175)
+$btnClearLog.Size = New-Object System.Drawing.Size(170, 30)
+$btnClearLog.Text = "Clear Log"
+$form.Controls.Add($btnClearLog)
 
 # Auto-reboot checkbox
 $chkAutoReboot = New-Object System.Windows.Forms.CheckBox
@@ -233,8 +239,29 @@ function Update-PCStatus {
     [System.Windows.Forms.Application]::DoEvents()
 }
 
+# Get PCs from status list - if items selected, use those; else use all
 function Get-PCList {
-    $pcs = $txtPCList.Text -split "`r`n|`n" | Where-Object { $_.Trim() -ne "" } | ForEach-Object { $_.Trim() }
+    if ($listStatus.SelectedItems.Count -gt 0) {
+        $pcs = @()
+        foreach ($item in $listStatus.SelectedItems) {
+            $pcs += $item.Text
+        }
+        return $pcs
+    } else {
+        $pcs = @()
+        foreach ($item in $listStatus.Items) {
+            $pcs += $item.Text
+        }
+        return $pcs
+    }
+}
+
+# Get ALL PCs from status list (ignores selection)
+function Get-AllPCs {
+    $pcs = @()
+    foreach ($item in $listStatus.Items) {
+        $pcs += $item.Text
+    }
     return $pcs
 }
 
@@ -319,47 +346,93 @@ function Detect-PCState {
 }
 
 # ============================================================
-# 1. LOAD PC LIST (with auto-detect)
+# ADD ALL BUTTON: Add all available PCs to target list
 # ============================================================
-$btnLoadPCs.Add_Click({
-    $listStatus.Items.Clear()
-    $script:PCStatus.Clear()
+$btnAddAll.Add_Click({
+    foreach ($availItem in $listAvailable.Items) {
+        $pcName = $availItem.Text
 
-    $pcs = Get-PCList
+        # Check if already in target list
+        $exists = $false
+        foreach ($item in $listStatus.Items) {
+            if ($item.Text -eq $pcName) {
+                $exists = $true
+                break
+            }
+        }
 
-    Write-Log "Loading $($pcs.Count) PCs and detecting current state..." "INFO"
-
-    foreach ($pc in $pcs) {
-        $item = New-Object System.Windows.Forms.ListViewItem($pc)
-        $item.SubItems.Add("Detecting...")
-        $listStatus.Items.Add($item) | Out-Null
-        [System.Windows.Forms.Application]::DoEvents()
+        if (-not $exists) {
+            $item = New-Object System.Windows.Forms.ListViewItem($pcName)
+            $item.SubItems.Add($script:STATUS_PENDING)
+            $listStatus.Items.Add($item) | Out-Null
+            $script:PCStatus[$pcName] = $script:STATUS_PENDING
+        }
     }
-
-    # Detect state for each PC
-    foreach ($pc in $pcs) {
-        Write-Log "[DETECT] Checking $pc..." "DEBUG"
-        [System.Windows.Forms.Application]::DoEvents()
-
-        $state = Detect-PCState $pc
-        Update-PCStatus $pc $state
-        Write-Log "[DETECT] $pc = $state" "INFO"
-    }
-
-    Write-Log "========================================" "INFO"
-    Write-Log "Auto-detection complete. States:" "INFO"
-
-    $summary = $script:PCStatus.Values | Group-Object | ForEach-Object { "$($_.Name): $($_.Count)" }
-    Write-Log ($summary -join ", ") "INFO"
+    Write-Log "[INFO] Added all available PCs to target list ($($listStatus.Items.Count) total)" "INFO"
 })
 
 # ============================================================
-# 2. TEST ALL CONNECTIONS (Parallel)
+# CLEAR TARGETS BUTTON: Remove all from target list
+# ============================================================
+$btnClearTargets.Add_Click({
+    $listStatus.Items.Clear()
+    $script:PCStatus.Clear()
+    Write-Log "[INFO] Cleared all PCs from target list" "INFO"
+})
+
+# ============================================================
+# DOUBLE-CLICK: Add PC from Available list to Target list
+# ============================================================
+$listAvailable.Add_DoubleClick({
+    if ($listAvailable.SelectedItems.Count -eq 0) { return }
+
+    $pcName = $listAvailable.SelectedItems[0].Text
+
+    # Check if already in target list
+    $exists = $false
+    foreach ($item in $listStatus.Items) {
+        if ($item.Text -eq $pcName) {
+            $exists = $true
+            break
+        }
+    }
+
+    if (-not $exists) {
+        $item = New-Object System.Windows.Forms.ListViewItem($pcName)
+        $item.SubItems.Add($script:STATUS_PENDING)
+        $listStatus.Items.Add($item) | Out-Null
+        $script:PCStatus[$pcName] = $script:STATUS_PENDING
+        Write-Log "[ADDED] $pcName to target list" "INFO"
+    } else {
+        Write-Log "[INFO] $pcName already in target list" "INFO"
+    }
+})
+
+# ============================================================
+# DOUBLE-CLICK: Remove PC from Target list
+# ============================================================
+$listStatus.Add_DoubleClick({
+    if ($listStatus.SelectedItems.Count -eq 0) { return }
+
+    $pcName = $listStatus.SelectedItems[0].Text
+    $listStatus.SelectedItems[0].Remove()
+    $script:PCStatus.Remove($pcName)
+    Write-Log "[REMOVED] $pcName from target list" "INFO"
+})
+
+# ============================================================
+# 1. TEST CONNECTIONS (Selected or All)
 # ============================================================
 $btnTestAll.Add_Click({
     $pcs = Get-PCList
+    if ($pcs.Count -eq 0) {
+        Write-Log "[ERROR] No PCs in target list. Double-click PCs to add them." "ERROR"
+        return
+    }
+
+    $selectionNote = if ($listStatus.SelectedItems.Count -gt 0) { "(selected)" } else { "(all)" }
     Write-Log "========================================" "INFO"
-    Write-Log "Testing connections to $($pcs.Count) PCs in parallel..." "INFO"
+    Write-Log "Testing connections to $($pcs.Count) PCs $selectionNote..." "INFO"
 
     foreach ($pc in $pcs) {
         Update-PCStatus $pc $script:STATUS_TESTING
@@ -901,14 +974,13 @@ $btnForceReboot.Add_Click({
 # ============================================================
 # STARTUP
 # ============================================================
-Write-Log "Windows 11 Batch Upgrade Tool - Parallel Mode" "INFO"
+Write-Log "Windows 11 Remote Upgrade Tool" "INFO"
 Write-Log "========================================" "INFO"
 Write-Log "Instructions:" "INFO"
-Write-Log "  1. Edit PC list (left panel) or keep defaults" "INFO"
-Write-Log "  2. Click 'Load PC List' to populate status grid" "INFO"
-Write-Log "  3. Click 'Test All' to verify connectivity" "INFO"
-Write-Log "  4. Run steps 3-6 in order for parallel upgrade" "INFO"
-Write-Log "  5. Use 'Monitor All' to check progress" "INFO"
+Write-Log "  - Double-click Available PC to add to Target list" "INFO"
+Write-Log "  - Double-click Target PC to remove it" "INFO"
+Write-Log "  - Select specific PCs for actions, or leave unselected for all" "INFO"
+Write-Log "  - Run steps 1-7 in order for upgrade" "INFO"
 Write-Log "========================================" "INFO"
 
 # Show form
