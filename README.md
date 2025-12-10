@@ -6,14 +6,17 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
 
 - **Remote deployment** - Upgrade PCs across your network without physical access
 - **Hardware bypass** - Automatically applies all known registry bypasses for unsupported hardware
-- **Batch/Parallel mode** - Upgrade multiple PCs simultaneously with status tracking
-- **Auto-detection** - Detects current state of each PC on session restart
-- **Step-by-step workflow** - Each operation is a separate button for controlled execution
-- **Live progress monitoring** - Real-time download progress with speed and ETA
+- **Dual-grid PC selection** - Available PCs list + Target PCs list with drag-and-drop style interaction
+- **Parallel operations** - Test, bypass, download, extract, and upgrade multiple PCs simultaneously
+- **Selective targeting** - Select specific PCs for actions, or run on all targets
+- **Auto-detection** - Detects current state of each PC (Downloading, Extracted, Upgrading, Complete)
+- **Live status tracking** - Color-coded status for each PC in real-time
+- **60-day rollback window** - Automatically extended during bypass (default is only 10 days)
 - **Auto-reboot option** - Automatically reboot PCs when upgrade completes
 - **Force reboot with ping monitoring** - Remote reboot with live status until PC comes back online
 - **Debug logging** - Full terminal output for troubleshooting
 - **Domain-ready** - Uses PsExec and admin shares for enterprise environments
+- **Session persistence** - Downloads/upgrades continue even if GUI is closed
 
 ## Requirements
 
@@ -28,6 +31,7 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
 - File and Printer Sharing enabled (default in domain environments)
 - Admin share accessible (`\\PCNAME\C$`)
 - ~30GB free disk space
+- Internet access (for ISO download)
 
 ## Files
 
@@ -46,25 +50,48 @@ A PowerShell-based GUI tool for remotely upgrading Windows 10 PCs to Windows 11,
    ```powershell
    powershell -ExecutionPolicy Bypass -File "Win11UpgradeGUI.ps1"
    ```
-3. Edit the PC list in the left panel (one PC per line)
-4. Click **Load PC List** - auto-detects current state of each PC
-5. Click **Test All Connections** - verifies which PCs are online
-6. Follow steps 3-6 in order:
-   - **Apply Bypass (All)** - Registry keys applied in parallel
-   - **Download ISO (All)** - Downloads start on all PCs simultaneously
-   - **Extract ISO (All)** - Extracts in parallel
-   - **Start Upgrade (All)** - Launches upgrades on all ready PCs
-7. Use **Monitor All** to check progress
-8. **Reboot All Ready** or let auto-reboot handle it
-9. **Verify OS** to confirm Windows 11 is installed
 
-**Tip:** For a single PC, just enter one PC name in the list.
+## User Interface
 
-## Additional Features
+### Left Panel - Available PCs
+- Pre-populated list of PCs you can upgrade
+- **Double-click** a PC to add it to the Target list
+- **Add All >>** button adds all available PCs at once
+- **Clear Targets** button removes all PCs from target list
 
-- **Check Storage (All)** - Shows free disk space on all PCs
-- **Force Reboot Selected** - Click a PC in the list, then force reboot with ping monitoring
-- **60-day rollback window** - Automatically extended during bypass (default is 10 days)
+### Middle Panel - Target PCs
+- Shows PCs you've selected for upgrade with their current status
+- **Double-click** a PC to remove it from targets
+- **Multi-select** (Ctrl+click or Shift+click) to select specific PCs
+- Color-coded status indicators
+
+### Right Panel - Actions
+All actions run on **selected PCs** if any are selected, otherwise runs on **all target PCs**.
+
+| Button | Description |
+|--------|-------------|
+| 1. Test Connections | Ping and verify admin share access |
+| 2. Apply Bypass | Apply registry bypasses + extend rollback to 60 days |
+| 3. Download ISO | Download Windows 11 ISO to each PC (background) |
+| 4. Extract ISO | Mount and extract ISO contents |
+| 5. Start Upgrade | Launch silent upgrade with hardware bypass |
+| 6. Monitor Progress | Check upgrade status and progress % |
+| 7. Verify OS | Confirm Windows 11 is installed |
+| Reboot Ready | Reboot all PCs that completed upgrade |
+| Check Storage | Show free disk space on target PCs |
+| Force Reboot Selected | Reboot selected PC with ping monitoring |
+
+## Workflow
+
+1. **Add PCs** - Double-click PCs in Available list, or click "Add All >>"
+2. **Test Connections** - Verify all target PCs are online and accessible
+3. **Apply Bypass** - Set registry keys + extend rollback window to 60 days
+4. **Download ISO** - Downloads run in background on each PC (~6.5 GB)
+5. **Extract ISO** - Mounts ISO and copies files locally
+6. **Start Upgrade** - Launches silent upgrade (takes 30-60 minutes)
+7. **Monitor Progress** - Check status periodically
+8. **Reboot** - Auto-reboot when ready, or use Reboot Ready button
+9. **Verify OS** - Confirm Windows 11 is installed
 
 ## Status Colors
 
@@ -83,13 +110,19 @@ The tool applies all known Windows 11 requirement bypasses:
 
 | Registry Key | Value | Purpose |
 |-------------|-------|---------|
-| `HKLM\SYSTEM\Setup\MoSetup\AllowUpgradesWithUnsupportedTPMOrCPU` | 1 | Main bypass |
-| `HKLM\SYSTEM\Setup\LabConfig\BypassTPMCheck` | 1 | Skip TPM 2.0 check |
-| `HKLM\SYSTEM\Setup\LabConfig\BypassSecureBootCheck` | 1 | Skip Secure Boot check |
-| `HKLM\SYSTEM\Setup\LabConfig\BypassRAMCheck` | 1 | Skip 4GB RAM check |
+| `HKLM\SYSTEM\Setup\MoSetup\AllowUpgradesWithUnsupportedTPMOrCPU` | 1 | Main bypass flag |
+| `HKLM\SYSTEM\Setup\LabConfig\BypassTPMCheck` | 1 | Skip TPM 2.0 requirement |
+| `HKLM\SYSTEM\Setup\LabConfig\BypassSecureBootCheck` | 1 | Skip Secure Boot requirement |
+| `HKLM\SYSTEM\Setup\LabConfig\BypassRAMCheck` | 1 | Skip 4GB RAM requirement |
 | `HKLM\SYSTEM\Setup\LabConfig\BypassCPUCheck` | 1 | Skip CPU compatibility check |
-| `HKLM\SYSTEM\Setup\LabConfig\BypassStorageCheck` | 1 | Skip storage check |
-| `HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\DisableWUfBSafeguards` | 1 | Disable safeguard holds |
+| `HKLM\SYSTEM\Setup\LabConfig\BypassStorageCheck` | 1 | Skip storage requirement |
+| `HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\DisableWUfBSafeguards` | 1 | Disable Windows Update safeguard holds |
+
+Additionally, the tool runs:
+```
+DISM /Online /Set-OSUninstallWindow /Value:60
+```
+This extends the rollback window from 10 days to **60 days**.
 
 ## Upgrade Command
 
@@ -99,65 +132,85 @@ The tool uses `setupprep.exe` with the `/product server` flag to bypass hardware
 setupprep.exe /product server /auto upgrade /quiet /eula accept /dynamicupdate disable
 ```
 
-- `/product server` - Treats upgrade as Server SKU (bypasses consumer hardware checks)
-- `/auto upgrade` - In-place upgrade keeping files/apps
-- `/quiet` - No UI (silent)
-- `/eula accept` - Auto-accept license
-- `/dynamicupdate disable` - Skip downloading updates during setup (prevents hangs)
+| Flag | Purpose |
+|------|---------|
+| `/product server` | Treats upgrade as Server SKU (bypasses consumer hardware checks) |
+| `/auto upgrade` | In-place upgrade keeping files and apps |
+| `/quiet` | No UI (silent operation) |
+| `/eula accept` | Auto-accept license agreement |
+| `/dynamicupdate disable` | Skip downloading updates during setup (prevents hangs) |
 
-## Rollback
+## Rollback to Windows 10
 
-Windows keeps a rollback option for **10 days** after upgrade:
+After upgrading, users have **60 days** to rollback (extended from default 10 days):
+
+**Via Settings:**
 - Settings → System → Recovery → "Go back to Windows 10"
-- Requires `C:\Windows.old` folder (don't run Disk Cleanup!)
+
+**Via Command (remote):**
+```powershell
+DISM /Online /Initiate-OSUninstall
+```
+
+**Requirements:**
+- `C:\Windows.old` folder must exist (don't run Disk Cleanup!)
+- Must be within the 60-day rollback window
+
+## Session Persistence
+
+- **Downloads** run as background processes on target PCs - closing GUI doesn't interrupt them
+- **Upgrades** run as background processes on target PCs - closing GUI doesn't interrupt them
+- **Auto-detect** when adding PCs finds their current state automatically
+- Safe to close and reopen the tool at any time
+- Can run multiple GUI instances for different PC groups
 
 ## Troubleshooting
 
 ### "PC not reachable"
 - Verify PC is powered on and connected to network
 - Check firewall allows ICMP ping and SMB (port 445)
+- Try `ping PCNAME` from command prompt
 
 ### "Cannot access admin share"
-- Ensure you're running as domain admin
-- Verify File and Printer Sharing is enabled on target PC
+- Ensure you're running PowerShell as Administrator
+- Verify you have domain admin or local admin rights
+- Check File and Printer Sharing is enabled on target PC
+- Try `dir \\PCNAME\C$` from command prompt
 
-### Upgrade fails with 0xC1900200
-- Hardware requirements not bypassed - run "Apply Bypass" step
-- The `/product server` flag should handle this
-
-### Download fails / stuck at "waiting"
+### Download stuck at "waiting"
 - Microsoft ISO links may expire - check URL is still valid
-- Check target PC has internet access
+- Verify target PC has internet access
 - Manually download ISO and copy to `\\PCNAME\C$\Win11Upgrade\Win11.iso`
 
+### Upgrade fails with 0xC1900200
+- Hardware requirements not bypassed - run "Apply Bypass" step again
+- The `/product server` flag should handle this automatically
+
 ### Upgrade stuck at 0%
-- Add `/dynamicupdate disable` flag (already included)
-- Check if `SetupHost.exe` is running on target PC
+- The `/dynamicupdate disable` flag (already included) prevents this
+- Check if `SetupHost.exe` is running on target PC via Task Manager
+- Use "Monitor Progress" to see detailed log output
 
 ### Use the Diagnostic Tool
-Run `Win11Diagnose.bat` to generate a comprehensive report of potential issues.
-
-## Session Persistence
-
-- **Downloads** run on target PCs - closing GUI doesn't interrupt them
-- **Upgrades** run on target PCs - closing GUI doesn't interrupt them
-- **Auto-detect** on "Load PC List" finds current state of each PC
-- Safe to close and reopen the tool at any time
+Run `Win11Diagnose.bat` on the target PC to generate a comprehensive report of potential issues.
 
 ## How It Works
 
 1. **Registry Bypass**: Adds registry keys that tell Windows Setup to skip hardware checks
-2. **ISO Download**: Downloads Windows 11 ISO directly to target PC (background process)
-3. **Extraction**: Mounts the ISO and copies files to a local folder
-4. **Silent Upgrade**: Runs `setupprep.exe /product server` to bypass all hardware checks
-5. **Auto-Watch**: Monitors setup logs for completion, triggers reboot when ready
+2. **Rollback Extension**: Uses DISM to extend rollback window to 60 days
+3. **ISO Download**: Downloads Windows 11 ISO directly to target PC via PowerShell (background process)
+4. **Extraction**: Mounts the ISO and copies all files to `C:\Win11Upgrade\Extracted\`
+5. **Silent Upgrade**: Runs `setupprep.exe /product server` which bypasses all consumer hardware checks
+6. **Auto-Reboot**: When upgrade completes, automatically reboots (if enabled) to finish installation
+7. **Verification**: Queries WMI to confirm Windows 11 is installed
 
 ## Security Notes
 
 - Scripts run with SYSTEM privileges via PsExec
 - Admin share access requires domain admin or equivalent rights
 - ISO is downloaded from official Microsoft servers
-- No third-party tools or modifications to Windows files
+- No third-party tools or modifications to Windows system files
+- All operations are logged for audit purposes
 
 ## License
 
@@ -165,8 +218,11 @@ MIT License - Use at your own risk. Not affiliated with Microsoft.
 
 ## Disclaimer
 
-Bypassing Windows 11 hardware requirements means Microsoft may not support your installation. While upgrades typically work fine, you may encounter:
-- Potential issues with future updates on very old hardware
-- No official support from Microsoft
+Bypassing Windows 11 hardware requirements means Microsoft may not fully support your installation. While upgrades typically work fine, you may encounter:
+- Potential issues with future updates on very old hardware (pre-2010 CPUs)
+- No official support from Microsoft for hardware-related issues
 
-Test on a single PC before mass deployment.
+**Recommendations:**
+- Test on a single PC before mass deployment
+- Keep the 60-day rollback window in mind for quick recovery
+- Document which PCs were upgraded for future reference
